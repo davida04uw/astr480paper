@@ -169,8 +169,8 @@ def generate_light_curve(
         from astropy.io import fits
         with fits.open(fname) as hdul:
             header = hdul[0].header
-            time = header.get("JD", header.get("DATE-OBS", "unknown"))
-        print(f"{fname}: {time}")
+            jd = header["JD"]
+            time_val = float(jd)
 
         phot = do_aperture_photometry(
             image=fname,
@@ -180,7 +180,7 @@ def generate_light_curve(
             sky_annulus_width=sky_annulus_width,
         )
         flux = phot[0]['net_flux']
-        times.append(time)
+        times.append(time_val)
         fluxes.append(flux)
 
     table = Table([times, fluxes], names=("time", "flux"))
@@ -188,13 +188,61 @@ def generate_light_curve(
     png_path = os.path.join(directory, f"{output_basename}.png")
     table.write(csv_path, format="ascii.csv", overwrite=True)
 
-    plt.figure()
-    plt.plot(times, fluxes, "ko-")
-    plt.xlabel("Time")
-    plt.ylabel("Net Flux")
-    plt.title(f"Light Curve: {output_basename}")
-    plt.grid(True)
+    from astropy.time import Time
+    import numpy as np
+
+    fluxes = np.array(fluxes)
+
+    # Store unnormalized flux for error calculation
+    raw_fluxes = fluxes.copy()
+
+    # Estimate simple error bars using non-negative flux for sqrt
+    aperture_area = np.pi * aperture_radius**2
+    sky_std = 20  # assumed RMS background in e-/pix
+    flux_errors = np.sqrt(np.maximum(raw_fluxes, 0) + aperture_area * sky_std**2)
+
+    # Normalize both flux and error
+    median_flux = np.median(raw_fluxes)
+    fluxes /= median_flux
+    flux_errors /= median_flux
+
+    times_jd = [float(t) for t in times]
+    times_rel = np.array(times_jd) - np.min(times_jd)  # Relative JD time axis
+
+    plt.figure(figsize=(10, 6))
+    plt.errorbar(times_rel, fluxes, yerr=flux_errors, fmt="ko-", markersize=4, linewidth=1, capsize=2)
+
+    # Choose expected mid-transit time based on target
+    mid_transit_jd = None
+    if "TOI-1199" in directory:
+        mid_transit_jd = 2460826.70764
+    elif "GJ-486" in directory:
+        mid_transit_jd = 2460826.67986
+    # Only plot if known and within ±1.5 days of observed data
+    if mid_transit_jd:
+        mid_transit_rel = mid_transit_jd - np.min(times_jd)
+        # Show the line if within ±1.5 days of the observed data
+        if -1.5 <= mid_transit_rel <= (np.max(times_jd) - np.min(times_jd)) + 1.5:
+            plt.axvline(mid_transit_rel, color='blue', linestyle='--', label='Expected Mid-Transit')
+
+    plt.xlabel("Relative Julian Date", fontsize=12)
+    plt.ylabel("Normalized Flux", fontsize=12)
+    plt.title("TOI-1199 Transit Light Curve (ARCSAT, r-band)", fontsize=14, weight='bold')
+    plt.grid(True, linestyle='--', alpha=0.6)
+    plt.legend()
+
+    # Disable Julian Date offset notation for better readability
+    from matplotlib.ticker import ScalarFormatter
+    ax = plt.gca()
+    formatter = ScalarFormatter()
+    formatter.set_useOffset(False)
+    formatter.set_scientific(False)
+    ax.xaxis.set_major_formatter(formatter)
+    plt.draw()
+
+    plt.tight_layout()
     plt.savefig(png_path)
+    plt.savefig(png_path.replace(".png", ".pdf"))
     plt.close()
 if __name__ == "__main__":
     # Known target positions
