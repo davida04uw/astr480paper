@@ -34,10 +34,9 @@ def do_aperture_photometry(
     from astropy.table import vstack
 
     # Step 1: Open the FITS file and extract image data
-    # Data is converted to float32 for precision in flux calculations
     with fits.open(image) as hdul:
         data = hdul[0].data.astype('f4')
-        header = hdul[0].header  # (optional: may be useful for tracking metadata)
+        header = hdul[0].header 
 
     results = []
 
@@ -95,7 +94,7 @@ def plot_radial_profile(aperture_photometry_data, output_filename="radial_profil
     # Step 1: Group the data by position — this supports multiple targets
     profile_data = {}
     for row in aperture_photometry_data:
-        pos = tuple(row['position'])  # Ensure the position is hashable as a dict key
+        pos = tuple(row['position']) 
         r = row['radius']
         flux = row['net_flux']
 
@@ -218,6 +217,7 @@ def generate_light_curve(
         mid_transit_jd = 2460826.70764
     elif "GJ-486" in directory:
         mid_transit_jd = 2460826.67986
+        
     # Only plot if known and within ±1.5 days of observed data
     if mid_transit_jd:
         mid_transit_rel = mid_transit_jd - np.min(times_jd)
